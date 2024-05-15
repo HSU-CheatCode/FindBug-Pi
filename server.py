@@ -59,7 +59,7 @@ while cap.isOpened():
 
         # 이미지를 파일로 저장
         img_save_path, file_count = fd.folder_path()
-        img_save_path = img_save_path+"/detected_bug"+file_count+".jpg"
+        img_save_path = img_save_path+"/detected_bug"+str(file_count)+".jpg"
         pil_img.save(img_save_path)
         print(f"Object detected! Image saved as {img_save_path}")
 
