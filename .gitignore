@@ -42,6 +42,9 @@ coco/
 coco128/
 VOC/
 
+#AWS Iot File
+connect_device_package/
+
 # MATLAB GitIgnore -----------------------------------------------------------------------------------------------------
 *.m~
 *.mat

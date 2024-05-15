@@ -1,10 +1,13 @@
 import cv2
 import torch
-import numpy as np
+from AWSIoTPythonSDK.MQTTLib import AWSIoTMQTTClient
 from PIL import Image, ImageDraw, ImageFont
 from models.experimental import attempt_load
 from utils.general import non_max_suppression
 import folder as fd
+
+#AWS Iot 설정
+
 
 # YOLOv5 모델을 위한 초기화
 model = attempt_load('./custom/best.pt')
