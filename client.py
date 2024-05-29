@@ -1,6 +1,10 @@
 import os
 import cv2
 import numpy as np
+import time
+import serial
+
+saved_time = 0
 
 # 파일 경로 설정
 weight_path = "./yolo-fastest-1_last.weights"
@@ -24,6 +28,10 @@ with open(names_path, "r") as f:
     classes = [line.strip() for line in f.readlines()]
 layer_names = YOLO_net.getLayerNames()
 output_layers = [layer_names[i - 1] for i in YOLO_net.getUnconnectedOutLayers()]
+
+# 시리얼 번호 저장
+serial_num = serial.write_serial_file()
+print(serial_num)
 
 # 웹캠 신호 받기
 cap = cv2.VideoCapture(0)
@@ -83,11 +91,14 @@ while True:
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
             cv2.putText(frame, f"{label} {score:.2f}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
 
-        # 객체가 탐지된 이미지를 저장
-        image_path = os.path.join(output_dir, f"detected_{frame_count}.jpg")
-        cv2.imwrite(image_path, frame)
-        print(f"Detection result saved as {image_path}")
-        frame_count += 1
+        now = time.time()
+        if now - saved_time > 30:
+            # 객체가 탐지된 이미지를 저장
+            image_path = os.path.join(output_dir, f"detected_{frame_count}.jpg")
+            cv2.imwrite(image_path, frame)
+            print(f"Detection result saved as {image_path}")
+            frame_count += 1
+            saved_time = now
 
     # 이미지 표시
     cv2.imshow("YOLO Object Detection", frame)
