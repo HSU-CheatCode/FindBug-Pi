@@ -1,78 +1,99 @@
+import os
 import cv2
-import torch
-from AWSIoTPythonSDK.MQTTLib import AWSIoTMQTTClient
-from PIL import Image, ImageDraw, ImageFont
-from models.experimental import attempt_load
-from utils.general import non_max_suppression
-import folder as fd
+import numpy as np
 
-#AWS Iot 설정
+# 파일 경로 설정
+weight_path = "./yolo-fastest-1_last.weights"
+cfg_path = "./yolo-fastest-1.1.cfg"
+names_path = "./yolo_names.txt"
 
+# 파일 존재 여부 확인
+if not os.path.exists(weight_path):
+    print(f"Weights file not found: {weight_path}")
+if not os.path.exists(cfg_path):
+    print(f"CFG file not found: {cfg_path}")
+if not os.path.exists(names_path):
+    print(f"Names file not found: {names_path}")
 
-# YOLOv5 모델을 위한 초기화
-model = attempt_load('./custom/best.pt')
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model.to(device)
+# YOLO 가중치 파일과 CFG 파일 로드
+YOLO_net = cv2.dnn.readNet(weight_path, cfg_path)
 
-# 이미지 크기
-image_width = 640
-image_height = 480
+# YOLO NETWORK 재구성
+classes = []
+with open(names_path, "r") as f:
+    classes = [line.strip() for line in f.readlines()]
+layer_names = YOLO_net.getLayerNames()
+output_layers = [layer_names[i - 1] for i in YOLO_net.getUnconnectedOutLayers()]
 
-# 카메라 연결
+# 웹캠 신호 받기
 cap = cv2.VideoCapture(0)
 
-while cap.isOpened():
+# 이미지를 저장할 디렉터리 생성
+output_dir = "images"
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
+
+frame_count = 0
+
+while True:
+    # 웹캠 프레임
     ret, frame = cap.read()
     if not ret:
+        print("Failed to grab frame")
         break
+    h, w, c = frame.shape
 
-    # OpenCV의 BGR 이미지를 RGB로 변환
-    img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    # YOLO 입력
+    blob = cv2.dnn.blobFromImage(frame, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
+    YOLO_net.setInput(blob)
+    outs = YOLO_net.forward(output_layers)
 
-    # 이미지 크기 조정
-    img_resized = cv2.resize(img, (image_width, image_height))
+    class_ids = []
+    confidences = []
+    boxes = []
 
-    # YOLOv5로 객체 감지
-    img_tensor = torch.from_numpy(img_resized).to(device)
-    img_tensor = img_tensor.permute(2, 0, 1).float().div(255.0).unsqueeze(0)
+    for out in outs:
+        for detection in out:
+            scores = detection[5:]
+            class_id = np.argmax(scores)
+            confidence = scores[class_id]
 
-    # 추론
-    pred = model(img_tensor)[0]
-    pred = non_max_suppression(pred, conf_thres=0.7, iou_thres=0.5)[0]
+            if confidence > 0.5:
+                # Object detected
+                center_x = int(detection[0] * w)
+                center_y = int(detection[1] * h)
+                dw = int(detection[2] * w)
+                dh = int(detection[3] * h)
+                # Rectangle coordinate
+                x = int(center_x - dw / 2)
+                y = int(center_y - dh / 2)
+                boxes.append([x, y, dw, dh])
+                confidences.append(float(confidence))
+                class_ids.append(class_id)
 
-    # 발견된 객체가 있는 경우
-    if pred is not None and len(pred) > 0:
-        # 이미지를 PIL 이미지로 변환
-        pil_img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-        draw = ImageDraw.Draw(pil_img)
+    indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.8, 0.8)
 
-        # 객체 정보 가져오기
-        for det in pred:
-            # 객체의 클래스 ID, 신뢰도, 경계 상자 좌표 가져오기
-            class_id = int(det[5])
-            conf = float(det[4])
-            xmin, ymin, xmax, ymax = map(int, det[:4])
+    if len(indexes) > 0:
+        for i in indexes.flatten():
+            x, y, w, h = boxes[i]
+            label = str(classes[class_ids[i]])
+            score = confidences[i]
 
-            # 클래스명 가져오기
-            class_name = model.names[class_id]
+            # 경계상자와 클래스 정보 이미지에 입력
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
+            cv2.putText(frame, f"{label} {score:.2f}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
 
-            # 이미지에 객체 정보 적기
-            draw.rectangle([xmin, ymin, xmax, ymax], outline="red", width=2)
-            draw.text((xmin, ymin), f"{class_name} ({conf:.2f})", fill="red")
+        # 객체가 탐지된 이미지를 저장
+        image_path = os.path.join(output_dir, f"detected_{frame_count}.jpg")
+        cv2.imwrite(image_path, frame)
+        print(f"Detection result saved as {image_path}")
+        frame_count += 1
 
-        # 이미지를 파일로 저장
-        img_save_path, file_count = fd.folder_path()
-        img_save_path = img_save_path+"/detected_bug"+str(file_count)+".jpg"
-        pil_img.save(img_save_path)
-        print(f"Object detected! Image saved as {img_save_path}")
+    # 이미지 표시
+    cv2.imshow("YOLO Object Detection", frame)
 
-    # OpenCV 창에 결과 표시
-    cv2.imshow('YOLOv5', frame)
-
-    # 'q' 키를 누르면 종료
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-# 종료
 cap.release()
 cv2.destroyAllWindows()
