@@ -33,7 +33,7 @@ output_layers = [layer_names[i - 1] for i in YOLO_net.getUnconnectedOutLayers()]
 
 # Serial number 생성 및 URL 설정
 serial_num = serial.write_serial_file().strip()
-url = 'http://findbugs.kro.kr/upload/' + str(serial_num)
+url = 'http://findbugs.kro.kr/upload'
 
 # 웹캠 신호 받기
 cap = cv2.VideoCapture(0)
@@ -94,15 +94,23 @@ while True:
         now = time.time()
         if now - saved_time > 30:
             saved_time = now
+
+            file_name, send_time = filename.make_file_name(serial_num)
+
+            params = {
+                'imei':serial_num,
+                'bugName':'cockroach',
+                'detectedTime':send_time
+            }
+
             # 객체가 탐지된 이미지를 저장
-            file_name = filename.make_file_name(serial_num)
             image_path = os.path.join(output_dir, f"{file_name}.jpg")
             cv2.imwrite(image_path, frame)
 
             with open(image_path, 'rb') as image_file:
                 # 감지한 객체를 서버에 전송
                 files = {'file':(f"{file_name}.jpg", image_file, 'image/jpeg')}
-                response = requests.post(url, files=files)
+                response = requests.post(url, files=files, params=params)
 
             if response.status_code == 200:
                 try:
