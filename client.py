@@ -3,12 +3,14 @@ import cv2
 import numpy as np
 import time
 import serial
+import requests
+import filename
 
 saved_time = 0
 
 # 파일 경로 설정
-weight_path = "./yolo-fastest-1_last.weights"
-cfg_path = "./yolo-fastest-1.1.cfg"
+weight_path = "./weights/yolo-fastest-1_last.weights"
+cfg_path = "./module/yolo-fastest-1.1.cfg"
 names_path = "./yolo_names.txt"
 
 # 파일 존재 여부 확인
@@ -29,9 +31,9 @@ with open(names_path, "r") as f:
 layer_names = YOLO_net.getLayerNames()
 output_layers = [layer_names[i - 1] for i in YOLO_net.getUnconnectedOutLayers()]
 
-# 시리얼 번호 저장
-serial_num = serial.write_serial_file()
-print(serial_num)
+# Serial number 생성 및 URL 설정
+serial_num = serial.write_serial_file().strip()
+url = 'http://findbugs.kro.kr/upload/' + str(serial_num)
 
 # 웹캠 신호 받기
 cap = cv2.VideoCapture(0)
@@ -40,8 +42,6 @@ cap = cv2.VideoCapture(0)
 output_dir = "images"
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
-
-frame_count = 0
 
 while True:
     # 웹캠 프레임
@@ -80,7 +80,7 @@ while True:
                 class_ids.append(class_id)
 
     indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.8, 0.8)
-
+    
     if len(indexes) > 0:
         for i in indexes.flatten():
             x, y, w, h = boxes[i]
@@ -90,15 +90,27 @@ while True:
             # 경계상자와 클래스 정보 이미지에 입력
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
             cv2.putText(frame, f"{label} {score:.2f}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-
+    # 30초 지나면 작동
         now = time.time()
         if now - saved_time > 30:
-            # 객체가 탐지된 이미지를 저장
-            image_path = os.path.join(output_dir, f"detected_{frame_count}.jpg")
-            cv2.imwrite(image_path, frame)
-            print(f"Detection result saved as {image_path}")
-            frame_count += 1
             saved_time = now
+            # 객체가 탐지된 이미지를 저장
+            file_name = filename.make_file_name(serial_num)
+            image_path = os.path.join(output_dir, f"{file_name}.jpg")
+            cv2.imwrite(image_path, frame)
+
+            with open(image_path, 'rb') as image_file:
+                # 감지한 객체를 서버에 전송
+                files = {'file':(f"{file_name}.jpg", image_file, 'image/jpeg')}
+                response = requests.post(url, files=files)
+
+            if response.status_code == 200:
+                try:
+                    print('이미지 업로드 성공:', response.json())
+                except requests.exceptions.JSONDecodeError:
+                    print('이미지 업로드 성공:', response.text)
+            else:
+                print('이미지 업로드 실패:', response.status_code, response.text)
 
     # 이미지 표시
     cv2.imshow("YOLO Object Detection", frame)
