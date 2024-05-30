@@ -79,7 +79,7 @@ while True:
                 confidences.append(float(confidence))
                 class_ids.append(class_id)
 
-    indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.8, 0.8)
+    indexes = cv2.dnn.NMSBoxes(boxes, confidences, score_threshold=0.7, nms_threshold=0.5, top_k=2)
     
     if len(indexes) > 0:
         for i in indexes.flatten():
